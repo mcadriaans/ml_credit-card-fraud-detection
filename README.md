@@ -1,5 +1,5 @@
-# 💳Credit Card Fraud Detection
-Binary Classification
+# 💳Credit Card Fraud Detection - A binary classification problem
+
 
 ## Project Overview ✨
 This project focuses on detecting fraudulent credit card transactions, a critical task in the financial industry. The primary challenge in this domain is the extreme class imbalance, where fraudulent transactions are a tiny fraction of the total. This notebook explores various techniques to handle this imbalance, including different resampling strategies and cost-sensitive learning, culminating in a robust XGBoost model optimized using Bayesian hyperparameter tuning with Optuna.
@@ -79,6 +79,24 @@ A critical step in fraud detection is adjusting the classification threshold, es
 
 ## Results & Key Findings  📈
 
-### Final Model Performance
+**The Core Challenge**:
+The dataset presented an extreme class imbalance, with only 0.17% of transactions labeled as fraudulent. The primary business objective was to minimize False Negatives (missed fraud) to prevent financial losses, while simultaneously maintaining high Precision to avoid inconveniencing legitimate customers with false alarms.
 
-The best model, **XGBoost with Optuna-tuned hyperparameters and an optimized threshold of 0.9444**.
+**The Approach & Learnings**:
+1. **Baseline Evaluation**: An initial Logistic Regression model, while achieving high overall accuracy (due to imbalance), yielded **only 58% Recall for fraud**, meaning a significant portion of fraudulent transactions were missed.
+2. **Systematic Imbalance Handling**: Thoroughly experimented with various oversampling (RandomOverSampler, SMOTE, ADASYN) and undersampling (RandomUnderSampler, EditedNearestNeighbours) techniques, as well as cost-sensitive learning (balanced/custom class weights).
+
+    * While many of these methods improved fraud Recall, **they severely degraded Precision (e.g., as low as 2-6%)**, leading to an unacceptable number of false positives. This demonstrated that a simple increase in Recall at the expense of Precision was not a viable solution for the business objective.
+
+3. **XGBoost & Optimization**: The XGBoost Classifier, particularly when its **scale_pos_weight parameter was leveraged**, emerged as the most effective algorithm. We further optimized its performance through:
+    * **Bayesian Hyperparameter Tuning (Optuna)**: Fine-tuning XGBoost's parameters resulted in a **substantial improvement in the F1-score**.
+    * **Precision-Recall Threshold Optimization**: Crucially, we analyzed the Precision-Recall tradeoff curve to identify an optimal prediction threshold (specifically 0.9444 during tuning, leading to a refined threshold of 0.9714 in the final model). This allowed us to achieve the desired balance between catching fraud and minimizing false alarms.
+  
+### Final Model Performance (XGBoost + Optuna with Optimized Threshold):
+
+* **Fraud Precision: 0.99** : An outstanding 99% of transactions flagged as fraudulent by the model were indeed fraud, virtually eliminating costly and trust-eroding false alarms.
+* **Fraud Recall: 0.73** : The model successfully identified 73% of all actual fraudulent transactions, significantly mitigating potential financial losses.
+* **Fraud F1-score: 0.84**:  This represents a strong, practical balance between Precision and Recall, making it highly effective for real-world deployment.
+* **False Negatives (missed fraud)**: Reduced from 40 in the baseline model to just 26 in the optimized model, demonstrating a critical improvement in fraud detection capability.
+
+*By systematically addressing extreme class imbalance and meticulously optimizing the model for a balanced, business-oriented outcome, we developed a fraud detection system that is both accurate and practical. The achievement of near-perfect precision (0.99) while still identifying a high percentage of fraud (0.73 recall) is a testament to the robust methodology applied.*
