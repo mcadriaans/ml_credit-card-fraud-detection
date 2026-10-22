@@ -2,45 +2,49 @@
 
 ## Project Overview ✨
 
-This project focuses on detecting fraudulent credit card transactions, a critical task in the financial industry. The primary challenge in this domain is extreme class imbalance, where fraudulent transactions make up a tiny fraction of the total. This notebook explores several techniques for handling that imbalance, including multiple resampling strategies and cost sensitive learning, before landing on a final model: XGBoost tuned with Bayesian optimization (Optuna) and a threshold selected from the validation set.
+This project focuses on detecting fraudulent credit card transactions, a critical task in the financial industry. The primary challenge is extreme class imbalance, where fraudulent transactions make up a tiny fraction of the total. This notebook explores several techniques for handling that imbalance, including resampling strategies and cost-sensitive learning, before selecting a final model: XGBoost tuned with Bayesian optimization using Optuna, followed by decision-threshold selection on the validation set.
 
-**Goal:** build a model that minimizes missed fraud cases (false negatives) as much as possible without letting precision collapse. Missed fraud causes direct financial loss, but too many false alarms overwhelm a fraud review team and erode trust in the system.
+**Goal:** Minimize missed fraud cases (false negatives) while maintaining high precision. Missed fraud can cause direct financial loss, but excessive false alarms can overwhelm a fraud review team and erode trust in the system.
 
 ## Data Source 📊
 
-The [Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) from Kaggle, provided by Worldline and ULB (Université Libre de Bruxelles). Contains transactions made by European cardholders over two days in September 2013.
+The [Credit Card Fraud Detection dataset](https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud) from Kaggle, provided by Worldline and ULB (Université Libre de Bruxelles). It contains transactions made by European cardholders over two days in September 2013.
 
-**Features:** `Time` (seconds since the first transaction, later dropped), `V1 to V28` (PCA transformed features, anonymized for confidentiality), `Amount`, and `Class` (target: 0 = legitimate, 1 = fraud).
+**Features:** `Time` (seconds since the first transaction, later dropped), `V1` to `V28` (PCA-transformed features, anonymized for confidentiality), `Amount`, and `Class` (target: `0` = legitimate, `1` = fraud).
 
 ## Methodology 🛠️
 
 ### Data Cleaning & Preprocessing
-- Removed 1,081 duplicate transaction entries
-- Confirmed there were no missing values
-- Standardized column names to lowercase
-- Dropped the `Time` column, since it isn't directly indicative of fraud
-- Applied `StandardScaler` to the features, fit only on training data
+
+- Removed 1,081 duplicate transaction entries.
+- Confirmed there were no missing values.
+- Standardized column names to lowercase.
+- Dropped the `Time` column, since it was not used as a predictor in this analysis.
+- Applied `StandardScaler` to the features, fitting the scaler on the training data only.
 
 ### Rigorous Evaluation Methodology
 
-To keep the reported results honest rather than optimistic, this project uses a three way train / validation / test split:
-- **Training set**, used to fit every model
-- **Validation set**, used for all technique comparisons, hyperparameter tuning (Optuna), and threshold selection
-- **Test set**, touched exactly once at the very end, to report the final performance of the model that had already been fully selected
+To reduce overly optimistic performance estimates, this project uses a three-way train/validation/test split:
 
-This avoids a common pitfall in imbalanced classification work, where tuning decisions get made against the same data used to report final performance, quietly inflating the results.
+- **Training set:** Used to fit the models.
+- **Validation set:** Used to compare techniques, tune XGBoost hyperparameters with Optuna, and select the decision threshold.
+- **Test set:** Reserved for the final evaluation after model selection.
+
+This separation helps prevent the test set from influencing modeling decisions and provides a more reliable estimate of how the selected model generalizes to unseen data.
 
 ### Class Imbalance: The Core Challenge
 
-- Legitimate transactions: 283,253 (99.83%)
-- Fraudulent transactions: 473 (0.17%)
+After duplicate removal, the dataset contains:
 
-A model that predicts "legitimate" for every transaction would score 99.8% accuracy while catching zero fraud. That makes standard accuracy meaningless here, and precision and recall the metrics that actually matter.
+- Legitimate transactions: **283,253 (99.83%)**
+- Fraudulent transactions: **473 (0.17%)**
 
-### Addressing Class Imbalance: Results (validation set)
+A model that predicts every transaction as legitimate would achieve approximately 99.8% accuracy while detecting zero fraud cases. This makes accuracy alone misleading. Precision and recall for the minority (fraud) class are much more informative.
+
+### Addressing Class Imbalance: Results (Validation Set)
 
 | Technique | Precision | Recall | F1 |
-|---|---|---|---|
+|---|---:|---:|---:|
 | Baseline (Logistic Regression) | 91.2% | 68.4% | 0.782 |
 | RandomOverSampler | 5.3% | 89.5% | 0.100 |
 | SMOTE | 4.9% | 88.2% | 0.093 |
@@ -52,27 +56,47 @@ A model that predicts "legitimate" for every transaction would score 99.8% accur
 | XGBoost | 94.2% | 85.5% | 0.897 |
 | XGBoost + Optuna (threshold 0.5) | 98.5% | 85.5% | 0.915 |
 
-Every resampling and class weighting technique followed the same pattern: recall climbed above 88%, but precision collapsed into single digits, as low as 1.7% for ADASYN. That means the model would flag overwhelming numbers of legitimate transactions as fraud. EditedNearestNeighbours was the one method that meaningfully beat the baseline, since it cleans noisy data near the decision boundary instead of blindly duplicating or removing records. The real improvement came from changing the algorithm rather than the data. XGBoost with `scale_pos_weight` outperformed every resampling technique tried, and Bayesian tuning with Optuna improved it further still.
+Most resampling and class-weighting techniques increased recall above 88%, but precision fell into single digits, reaching as low as 1.7% with ADASYN. Although these approaches detected more fraud cases, they also generated many false alarms, making them less practical for a fraud review team.
+
+EditedNearestNeighbours (ENN) was a notable exception. It improved on the baseline F1 score by removing selected observations near the decision boundary rather than simply duplicating minority-class records or removing majority-class records.
+
+The strongest overall results came from XGBoost with `scale_pos_weight`, which accounted for class imbalance without resampling the training data. Optuna hyperparameter tuning improved precision further while maintaining recall at approximately 85.5% at the default 0.5 threshold.
 
 ### Threshold Optimization
 
-Instead of using the default 0.5 cutoff, the decision threshold was tuned using the precision recall curve on the validation set, to find the point that best reflects the real cost of missed fraud versus false alarms.
+Rather than relying on the default probability threshold of 0.5, I used the precision-recall curve on the validation set to select a threshold that maximized the F1 score.
 
-## Final Result: Held Out Test Set (evaluated once) 📈
+The selected threshold was approximately **0.9721**. At this threshold, validation precision was approximately 98.5% and recall was approximately 85.5%.
+
+Raising the threshold made the model more selective about flagging transactions as fraudulent. This improved precision but involved a trade-off: a higher threshold can also cause more actual fraud cases to be missed.
+
+The threshold was selected using validation data, leaving the test set separate for the final evaluation.
+
+## Final Result: Held-Out Test Set 📈
 
 | Metric | Score |
-|---|---|
+|---|---:|
 | Precision | 98.6% |
 | Recall | 72.6% |
 | F1 score | 0.836 |
 
-When the model flags a transaction as fraud, it's correct 98.6% of the time, which nearly eliminates false alarms, while still catching about 3 out of every 4 actual fraud cases.
+On the held-out test set, the final model achieved 98.6% precision and 72.6% recall.
 
-In fraud detection, false positives carry a real operational cost. They erode trust in the system and overwhelm the people who have to act on every alert. Prioritizing precision here means the alerts this model produces are ones a fraud team can actually act on with confidence, rather than a flood of false alarms that eventually gets ignored. That was a deliberate business trade-off, not just a statistical one.
+This means that approximately 98.6% of transactions flagged as fraudulent were actually fraudulent, while the model detected about 72.6% of all fraudulent transactions in the test set.
+
+The results demonstrate a clear trade-off. The model keeps false positives low, but it still misses approximately 27% of actual fraud cases. That limitation matters because missed fraud can lead to financial losses.
+
+In fraud detection, false positives also carry operational costs. They consume review resources and can erode trust in fraud alerts. Prioritizing precision makes the model's alerts more reliable, but this comes at the expense of detecting every fraudulent transaction.
+
+The final threshold therefore represents a precision-oriented operating point rather than a universally optimal solution. In a real deployment, the preferred threshold would depend on the relative costs of missed fraud, false alarms, and manual review.
 
 ## Key Takeaways
 
-- Naive accuracy is meaningless under 0.17% class imbalance. Precision and recall on the minority class are what actually matter.
-- Resampling and class weighting techniques can boost recall dramatically, but they often destroy precision in the process. The two need to be evaluated together, not separately.
-- Algorithm choice mattered more than data resampling. XGBoost with built in imbalance handling outperformed every resampling approach tested.
-- All tuning decisions were made on a validation set. The test set was used exactly once, so the final reported performance reflects genuine generalization rather than accidental overfitting to the evaluation data.
+- **Accuracy can be misleading:** With only 0.17% fraudulent transactions, a model can achieve very high accuracy while detecting no fraud at all.
+- **Precision and recall must be considered together:** Resampling and class weighting often increased recall but substantially reduced precision in the approaches tested.
+- **Algorithm choice mattered:** XGBoost with built-in class-imbalance handling outperformed the resampling approaches evaluated.
+- **Hyperparameter tuning improved results:** Optuna improved the tuned XGBoost model's precision while maintaining strong recall at the default threshold.
+- **Threshold selection changes the trade-off:** Selecting a higher threshold improved precision but reduced the proportion of fraud cases detected on the held-out test set.
+- **Evaluation separation matters:** Hyperparameter tuning and threshold selection used validation data, while the test set was reserved for the final performance evaluation.
+
+Overall, this project demonstrates an end-to-end binary classification workflow, from data cleaning and class-imbalance analysis to model comparison, Bayesian hyperparameter optimization, threshold selection, and held-out evaluation. It also highlights an important practical lesson: a useful fraud detection model must balance detection performance with the operational consequences of its predictions.
